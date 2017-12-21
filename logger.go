@@ -89,7 +89,8 @@ type Line struct {
 	// Message is the message that was logged.
 	Message string
 	// Data is any auxillary data that was captured.
-	Data []interface{}
+	Data          []interface{}
+	ignorePublish bool
 }
 
 // Publisher is a function to be called whenever a Line would be added
@@ -138,10 +139,11 @@ type Logger interface {
 	Panicf(string, ...interface{})
 	Fork() Logger
 	With(...interface{}) Logger
+	NoPublish() Logger
 	Level() Level
-	SetLevel(Level)
+	SetLevel(Level) Logger
 	Service() string
-	SetService(string)
+	SetService(string) Logger
 	Buffer() *Buffer
 }
 
@@ -150,14 +152,28 @@ type Logger interface {
 // loggers and calling Publisher callbacks as needed.
 type Buffer struct {
 	*sync.Mutex
-	nextGroup   int64
-	baseLogger  Local
-	logs        map[string]*log
-	retainLines int
-	wrapped     bool
-	nextLine    int
-	buffer      []*Line
-	publisher   Publisher
+	nextGroup    int64
+	baseLogger   Local
+	logs         map[string]*log
+	retainLines  int
+	wrapped      bool
+	nextLine     int
+	buffer       []*Line
+	publisher    Publisher
+	defaultLevel Level
+}
+
+func (b *Buffer) DefaultLevel() Level {
+	b.Lock()
+	defer b.Unlock()
+	return b.defaultLevel
+}
+
+func (b *Buffer) SetDefaultLevel(l Level) *Buffer {
+	b.Lock()
+	defer b.Unlock()
+	b.defaultLevel = l
+	return b
 }
 
 // NewGroup returns a new group number.
@@ -168,10 +184,11 @@ func (b *Buffer) NewGroup() int64 {
 
 // SetPublisher sets a callback function to be called whenever
 // a Line will be written to a Local logger.
-func (b *Buffer) SetPublisher(p Publisher) {
+func (b *Buffer) SetPublisher(p Publisher) *Buffer {
 	b.Lock()
 	defer b.Unlock()
 	b.publisher = p
+	return b
 }
 
 func (b *Buffer) lines(max int) []*Line {
@@ -223,11 +240,12 @@ func (b *Buffer) lines(max int) []*Line {
 // This number is adjustable on the fly with the KeepLines method.
 func New(base Local) *Buffer {
 	return &Buffer{
-		Mutex:       &sync.Mutex{},
-		baseLogger:  base,
-		logs:        map[string]*log{},
-		retainLines: 1000,
-		buffer:      make([]*Line, 1000),
+		Mutex:        &sync.Mutex{},
+		baseLogger:   base,
+		logs:         map[string]*log{},
+		retainLines:  1000,
+		buffer:       make([]*Line, 1000),
+		defaultLevel: Error,
 	}
 }
 
@@ -247,7 +265,7 @@ func (b *Buffer) Log(service string) Logger {
 			group:   new(int64),
 			base:    b,
 			service: service,
-			level:   Error,
+			level:   b.defaultLevel,
 			aux:     []interface{}{},
 		}
 		atomic.StoreInt64(res.group, b.NewGroup())
@@ -283,11 +301,11 @@ func (b *Buffer) MaxLines() int {
 
 // KeepLines sets the max number of lines that will be kept in memory by the Logger.
 // It will discard older lines as appropriate.
-func (b *Buffer) KeepLines(lines int) {
+func (b *Buffer) KeepLines(lines int) *Buffer {
 	b.Lock()
 	defer b.Unlock()
 	if lines == b.retainLines {
-		return
+		return b
 	}
 	buffer := b.lines(lines)
 	b.buffer = make([]*Line, lines)
@@ -295,6 +313,7 @@ func (b *Buffer) KeepLines(lines int) {
 	b.nextLine = len(buffer)
 	copy(b.buffer, buffer)
 	b.retainLines = lines
+	return b
 }
 
 func (b *Buffer) insertLine(l *Line) {
@@ -310,7 +329,7 @@ func (b *Buffer) insertLine(l *Line) {
 	}
 	l.Time = time.Now()
 	l.Seq = atomic.AddInt64(&seq, 1)
-	if b.publisher != nil {
+	if b.publisher != nil && !l.ignorePublish {
 		b.publisher(l)
 	}
 	if b.baseLogger != nil {
@@ -327,11 +346,12 @@ func (b *Buffer) insertLine(l *Line) {
 
 // Log is the default implementation of our Logger interface.
 type log struct {
-	base    *Buffer
-	group   *int64
-	service string
-	level   Level
-	aux     []interface{}
+	base          *Buffer
+	group         *int64
+	service       string
+	level         Level
+	aux           []interface{}
+	ignorePublish bool
 }
 
 func (b *log) addLine(level Level, message string, args ...interface{}) {
@@ -339,11 +359,12 @@ func (b *log) addLine(level Level, message string, args ...interface{}) {
 		return
 	}
 	line := &Line{
-		Group:   *b.group,
-		Level:   level,
-		Service: b.service,
-		Message: fmt.Sprintf(message, args...),
-		Data:    b.aux,
+		Group:         *b.group,
+		Level:         level,
+		Service:       b.service,
+		Message:       fmt.Sprintf(message, args...),
+		Data:          b.aux,
+		ignorePublish: b.ignorePublish,
 	}
 	_, line.File, line.Line, _ = runtime.Caller(2)
 	b.base.insertLine(line)
@@ -382,8 +403,14 @@ func (b *log) Buffer() *Buffer {
 }
 
 func (b *log) With(args ...interface{}) Logger {
-	res := &log{b.base, b.group, b.service, b.level, b.aux}
+	res := &log{b.base, b.group, b.service, b.level, b.aux, b.ignorePublish}
 	res.aux = append(res.aux, args...)
+	return res
+}
+
+func (b *log) NoPublish() Logger {
+	res := &log{b.base, b.group, b.service, b.level, b.aux, b.ignorePublish}
+	res.ignorePublish = true
 	return res
 }
 
@@ -403,14 +430,16 @@ func (b *log) Level() Level {
 	return b.level
 }
 
-func (b *log) SetLevel(l Level) {
+func (b *log) SetLevel(l Level) Logger {
 	b.level = l
+	return b
 }
 
 func (b *log) Service() string {
 	return b.service
 }
 
-func (b *log) SetService(s string) {
+func (b *log) SetService(s string) Logger {
 	b.service = s
+	return b
 }
