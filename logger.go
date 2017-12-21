@@ -12,6 +12,7 @@ package logger
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -67,6 +68,29 @@ func (l Level) String() string {
 		return "panic"
 	}
 	return "unknown"
+}
+
+// ParseLevel returns the log level appropriate for the passed in
+// string.  It returns an error if s refers to an unknown level.
+func ParseLevel(s string) (Level, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "trace":
+		return Trace, nil
+	case "debug":
+		return Debug, nil
+	case "info":
+		return Info, nil
+	case "warn":
+		return Warn, nil
+	case "error":
+		return Error, nil
+	case "fatal":
+		return Fatal, nil
+	case "panic":
+		return Panic, nil
+	default:
+		return Panic, fmt.Errorf("Invalid level: %s", s)
+	}
 }
 
 // Line is the smallest unit of things we log.
