@@ -202,8 +202,7 @@ func (b *Buffer) SetDefaultLevel(l Level) *Buffer {
 
 // NewGroup returns a new group number.
 func (b *Buffer) NewGroup() int64 {
-	atomic.AddInt64(&b.nextGroup, 1)
-	return b.nextGroup
+	return atomic.AddInt64(&b.nextGroup, 1)
 }
 
 // SetPublisher sets a callback function to be called whenever
