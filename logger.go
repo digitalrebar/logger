@@ -153,6 +153,10 @@ type Local interface {
 // With returns a new Logger that shares the same Group as its
 // parent, but that has additional data that will be added to any
 // Lines the new Logger generates.
+//
+// Switch makes a Logger that logs with the same Service and Level
+// as a default Logger with the passed-in service name, but with
+// the current logger's Group
 type Logger interface {
 	Tracef(string, ...interface{})
 	Debugf(string, ...interface{})
@@ -163,6 +167,7 @@ type Logger interface {
 	Panicf(string, ...interface{})
 	Fork() Logger
 	With(...interface{}) Logger
+	Switch(string) Logger
 	NoPublish() Logger
 	Level() Level
 	SetLevel(Level) Logger
@@ -435,6 +440,17 @@ func (b *log) NoPublish() Logger {
 	res := &log{b.base, b.group, b.service, b.level, b.aux, b.ignorePublish}
 	res.ignorePublish = true
 	return res
+}
+
+func (b *log) Switch(service string) Logger {
+	l := b.Buffer().Log(service)
+	return &log{
+		base:    b.base,
+		service: l.Service(),
+		level:   l.Level(),
+		aux:     b.aux,
+		group:   b.group,
+	}
 }
 
 func (b *log) Fork() Logger {
