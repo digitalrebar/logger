@@ -122,7 +122,12 @@ type Line struct {
 type Publisher func(l *Line)
 
 func (l *Line) String() string {
-	return fmt.Sprintf("[%d:%d]%s [%s]: %s", l.Group, l.Seq, l.Service, l.Level, l.Message)
+	return fmt.Sprintf("[%d:%d]%s [%s]: %s:%d\n[%d:%d]%s",
+		l.Group, l.Seq,
+		l.Service, l.Level,
+		l.File, l.Line,
+		l.Group, l.Seq,
+		l.Message)
 }
 
 // Local allows us to accept as a local logger anything that has the
@@ -363,11 +368,11 @@ func (b *Buffer) insertLine(l *Line) {
 	if b.baseLogger != nil {
 		switch l.Level {
 		case Panic:
-			b.baseLogger.Panicf("%s [%s]: %s", l.Service, l.Level, l.Message)
+			b.baseLogger.Panicf("%s", l)
 		case Fatal:
-			b.baseLogger.Fatalf("%s [%s]: %s", l.Service, l.Level, l.Message)
+			b.baseLogger.Fatalf("%s", l)
 		default:
-			b.baseLogger.Printf("%s [%s]: %s", l.Service, l.Level, l.Message)
+			b.baseLogger.Printf("%s", l)
 		}
 	}
 }
