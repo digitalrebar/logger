@@ -162,6 +162,10 @@ type Local interface {
 // Switch makes a Logger that logs with the same Service and Level
 // as a default Logger with the passed-in service name, but with
 // the current logger's Group
+//
+// Trace returns a Logger that will log at the desired log level,
+// and it an any Loggers created from it will silently ignore
+// any attempts to change the Level
 type Logger interface {
 	Tracef(string, ...interface{})
 	Debugf(string, ...interface{})
@@ -178,6 +182,7 @@ type Logger interface {
 	SetLevel(Level) Logger
 	Service() string
 	SetService(string) Logger
+	Trace(Level) Logger
 	Buffer() *Buffer
 }
 
@@ -385,6 +390,7 @@ type log struct {
 	level         Level
 	aux           []interface{}
 	ignorePublish bool
+	tracing       bool
 }
 
 func (b *log) addLine(level Level, message string, args ...interface{}) {
@@ -436,26 +442,31 @@ func (b *log) Buffer() *Buffer {
 }
 
 func (b *log) With(args ...interface{}) Logger {
-	res := &log{b.base, b.group, b.service, b.level, b.aux, b.ignorePublish}
+	res := &log{b.base, b.group, b.service, b.level, b.aux, b.ignorePublish, b.tracing}
 	res.aux = append(res.aux, args...)
 	return res
 }
 
 func (b *log) NoPublish() Logger {
-	res := &log{b.base, b.group, b.service, b.level, b.aux, b.ignorePublish}
+	res := &log{b.base, b.group, b.service, b.level, b.aux, b.ignorePublish, b.tracing}
 	res.ignorePublish = true
 	return res
 }
 
 func (b *log) Switch(service string) Logger {
 	l := b.Buffer().Log(service)
-	return &log{
+	res := &log{
 		base:    b.base,
 		service: l.Service(),
-		level:   l.Level(),
+		level:   b.level,
 		aux:     b.aux,
 		group:   b.group,
+		tracing: b.tracing,
 	}
+	if !res.tracing {
+		res.level = b.Level()
+	}
+	return res
 }
 
 func (b *log) Fork() Logger {
@@ -463,6 +474,7 @@ func (b *log) Fork() Logger {
 		base:    b.base,
 		service: b.service,
 		level:   b.level,
+		tracing: b.tracing,
 		aux:     []interface{}{},
 	}
 	grp := b.base.NewGroup()
@@ -475,7 +487,9 @@ func (b *log) Level() Level {
 }
 
 func (b *log) SetLevel(l Level) Logger {
-	b.level = l
+	if !b.tracing {
+		b.level = l
+	}
 	return b
 }
 
@@ -486,4 +500,15 @@ func (b *log) Service() string {
 func (b *log) SetService(s string) Logger {
 	b.service = s
 	return b
+}
+
+func (b *log) Trace(l Level) Logger {
+	return &log{
+		base:    b.base,
+		service: b.service,
+		level:   l,
+		aux:     b.aux,
+		group:   b.group,
+		tracing: true,
+	}
 }
