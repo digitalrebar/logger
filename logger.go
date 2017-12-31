@@ -355,6 +355,9 @@ func (b *Buffer) KeepLines(lines int) *Buffer {
 }
 
 func (b *Buffer) insertLine(l *Line) {
+	l.Time = time.Now()
+	l.Seq = atomic.AddInt64(&seq, 1)
+	b.Lock()
 	if b.retainLines != 0 {
 		if b.nextLine == len(b.buffer) {
 			if !b.wrapped {
@@ -365,8 +368,7 @@ func (b *Buffer) insertLine(l *Line) {
 		b.buffer[b.nextLine] = l
 		b.nextLine++
 	}
-	l.Time = time.Now()
-	l.Seq = atomic.AddInt64(&seq, 1)
+	b.Unlock()
 	if b.publisher != nil && !l.ignorePublish {
 		b.publisher(l)
 	}
