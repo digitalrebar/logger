@@ -46,6 +46,8 @@ const (
 	// and there is a possibility of handling or avoiding the error in a
 	// programmatic fashion.
 	Panic Level = iota
+	// Audit logs must always be printed.
+	Audit Level = iota
 )
 
 var seq int64
@@ -66,6 +68,8 @@ func (l Level) String() string {
 		return "fatal"
 	case Panic:
 		return "panic"
+	case Audit:
+		return "audit"
 	}
 	return "unknown"
 }
@@ -88,6 +92,8 @@ func ParseLevel(s string) (Level, error) {
 		return Fatal, nil
 	case "panic":
 		return Panic, nil
+	case "audit":
+		return Audit, nil
 	default:
 		return Panic, fmt.Errorf("Invalid level: %s", s)
 	}
@@ -174,6 +180,7 @@ type Logger interface {
 	Errorf(string, ...interface{})
 	Fatalf(string, ...interface{})
 	Panicf(string, ...interface{})
+	Auditf(string, ...interface{})
 	Fork() Logger
 	With(...interface{}) Logger
 	Switch(string) Logger
@@ -437,6 +444,10 @@ func (b *log) Fatalf(msg string, args ...interface{}) {
 
 func (b *log) Panicf(msg string, args ...interface{}) {
 	b.addLine(Panic, msg, args...)
+}
+
+func (b *log) Auditf(msg string, args ...interface{}) {
+	b.addLine(Audit, msg, args...)
 }
 
 func (b *log) Buffer() *Buffer {

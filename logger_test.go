@@ -108,17 +108,19 @@ func logLevels(l Logger) {
 	l.Errorf("4")
 	l.Fatalf("5")
 	l.Panicf("6")
+	l.Auditf("7")
 }
 
 func TestLevels(t *testing.T) {
 	lpl := map[Level]int{
-		Trace: 7,
-		Debug: 6,
-		Info:  5,
-		Warn:  4,
-		Error: 3,
-		Fatal: 2,
-		Panic: 1,
+		Trace: 8,
+		Debug: 7,
+		Info:  6,
+		Warn:  5,
+		Error: 4,
+		Fatal: 3,
+		Panic: 2,
+		Audit: 1,
 	}
 	for lvl, count := range lpl {
 		buf := New(nil)
