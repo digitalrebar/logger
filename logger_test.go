@@ -13,9 +13,9 @@ func TestGroup(t *testing.T) {
 	}
 	l3 := buf.Log("other").(*log)
 	if *l.group == *l3.group {
-		t.Errorf("ERROR: %s and %s have the same group %d", l.Service(), l3.Service(), *l.group)
+		t.Logf("%s and %s have the same group %d", l.Service(), l3.Service(), *l.group)
 	} else {
-		t.Logf("%s and %s have different groups %d and %d", l.Service(), l3.Service(), *l.group, *l3.group)
+		t.Errorf("ERROR: %s and %s have different groups %d and %d", l.Service(), l3.Service(), *l.group, *l3.group)
 	}
 	l4 := l3.Fork().(*log)
 	if *l4.group == *l3.group {

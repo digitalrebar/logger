@@ -19,7 +19,7 @@ import (
 )
 
 // Level is a log level.  It consists of the usual logging levels.
-type Level int
+type Level int32
 
 const (
 	// Trace should be used when you want detailed log messages that map
@@ -74,6 +74,18 @@ func (l Level) String() string {
 	return "unknown"
 }
 
+func (l *Level) MarshalText() ([]byte, error) {
+	return []byte(l.String()), nil
+}
+
+func (l *Level) UnmarshalText(t []byte) error {
+	lvl, err := ParseLevel(string(t))
+	if err == nil {
+		atomic.StoreInt32((*int32)(l), int32(lvl))
+	}
+	return err
+}
+
 // ParseLevel returns the log level appropriate for the passed in
 // string.  It returns an error if s refers to an unknown level.
 func ParseLevel(s string) (Level, error) {
@@ -86,7 +98,7 @@ func ParseLevel(s string) (Level, error) {
 		return Info, nil
 	case "warn":
 		return Warn, nil
-	case "error":
+	case "error", "err":
 		return Error, nil
 	case "fatal":
 		return Fatal, nil
@@ -170,9 +182,10 @@ type Local interface {
 // the current logger's Group
 //
 // Trace returns a Logger that will log at the desired log level,
-// and it an any Loggers created from it will silently ignore
+// and it and any Loggers created from it will silently ignore
 // any attempts to change the Level
 type Logger interface {
+	Logf(Level, string, ...interface{})
 	Tracef(string, ...interface{})
 	Debugf(string, ...interface{})
 	Infof(string, ...interface{})
@@ -181,9 +194,13 @@ type Logger interface {
 	Fatalf(string, ...interface{})
 	Panicf(string, ...interface{})
 	Auditf(string, ...interface{})
-	Fork() Logger
+	IsTrace() bool
+	IsInfo() bool
+	IsWarn() bool
+	IsError() bool
 	With(...interface{}) Logger
 	Switch(string) Logger
+	Fork() Logger
 	NoPublish() Logger
 	Level() Level
 	SetLevel(Level) Logger
@@ -294,10 +311,10 @@ func New(base Local) *Buffer {
 	}
 }
 
-// Log creates or reuses a Log for the passed-in Service.  All logs returned
-// for a particular Service by this method will share the same Group
-// and have a common Seq.  You can force a log into a different Group
-// using that log's Fork method.
+// Log creates or reuses a Log for the passed-in Service.  All logs
+// returned by this method will share the same Group and have a common
+// Seq.  You can force a log into a different Group using that log's
+// Fork method.
 func (b *Buffer) Log(service string) Logger {
 	b.Lock()
 	defer b.Unlock()
@@ -313,7 +330,7 @@ func (b *Buffer) Log(service string) Logger {
 			level:   b.defaultLevel,
 			aux:     []interface{}{},
 		}
-		atomic.StoreInt64(res.group, b.NewGroup())
+		atomic.StoreInt64(res.group, b.nextGroup)
 		b.logs[service] = res
 	}
 	return res
@@ -418,6 +435,10 @@ func (b *log) addLine(level Level, message string, args ...interface{}) {
 	b.base.insertLine(line)
 }
 
+func (b *log) Logf(l Level, msg string, args ...interface{}) {
+	b.addLine(l, msg, args...)
+}
+
 func (b *log) Tracef(msg string, args ...interface{}) {
 	b.addLine(Trace, msg, args...)
 }
@@ -448,6 +469,26 @@ func (b *log) Panicf(msg string, args ...interface{}) {
 
 func (b *log) Auditf(msg string, args ...interface{}) {
 	b.addLine(Audit, msg, args...)
+}
+
+func (b *log) IsTrace() bool {
+	return b.level <= Trace
+}
+
+func (b *log) IsDebug() bool {
+	return b.level <= Debug
+}
+
+func (b *log) IsInfo() bool {
+	return b.level <= Info
+}
+
+func (b *log) IsWarn() bool {
+	return b.level <= Warn
+}
+
+func (b *log) IsError() bool {
+	return b.level <= Error
 }
 
 func (b *log) Buffer() *Buffer {
