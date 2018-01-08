@@ -518,7 +518,7 @@ func (b *log) Switch(service string) Logger {
 		tracing: b.tracing,
 	}
 	if !res.tracing {
-		res.level = b.Level()
+		res.level = l.Level()
 	}
 	return res
 }
