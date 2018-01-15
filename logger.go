@@ -208,6 +208,7 @@ type Logger interface {
 	SetService(string) Logger
 	Trace(Level) Logger
 	Buffer() *Buffer
+	AddLine(*Line)
 }
 
 // Buffer is a ringbuffer that can be shared among several different
@@ -419,6 +420,10 @@ type log struct {
 	tracing       bool
 }
 
+func (b *log) AddLine(line *Line) {
+	b.base.insertLine(line)
+}
+
 func (b *log) addLine(level Level, message string, args ...interface{}) {
 	if level < b.level {
 		return
@@ -432,7 +437,7 @@ func (b *log) addLine(level Level, message string, args ...interface{}) {
 		ignorePublish: b.ignorePublish,
 	}
 	_, line.File, line.Line, _ = runtime.Caller(2)
-	b.base.insertLine(line)
+	b.AddLine(line)
 }
 
 func (b *log) Logf(l Level, msg string, args ...interface{}) {
