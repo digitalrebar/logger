@@ -421,6 +421,9 @@ type log struct {
 }
 
 func (b *log) AddLine(line *Line) {
+	if line.Level < b.level {
+		return
+	}
 	b.base.insertLine(line)
 }
 
@@ -437,7 +440,7 @@ func (b *log) addLine(level Level, message string, args ...interface{}) {
 		ignorePublish: b.ignorePublish,
 	}
 	_, line.File, line.Line, _ = runtime.Caller(2)
-	b.AddLine(line)
+	b.base.insertLine(line)
 }
 
 func (b *log) Logf(l Level, msg string, args ...interface{}) {
