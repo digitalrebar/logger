@@ -59,9 +59,9 @@ func (l Level) String() string {
 	case Debug:
 		return "debug"
 	case Info:
-		return " info"
+		return "info"
 	case Warn:
-		return " warn"
+		return "warn"
 	case Error:
 		return "error"
 	case Fatal:
@@ -140,7 +140,7 @@ type Line struct {
 type Publisher func(l *Line)
 
 func (l *Line) String() string {
-	return fmt.Sprintf("[%d:%d]%s [%s]: %s:%d\n[%d:%d]%s",
+	return fmt.Sprintf("[%d:%d]%s [%5s]: %s:%d\n[%d:%d]%s",
 		l.Group, l.Seq,
 		l.Service, l.Level,
 		l.File, l.Line,
