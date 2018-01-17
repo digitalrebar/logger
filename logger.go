@@ -519,12 +519,13 @@ func (b *log) NoPublish() Logger {
 func (b *log) Switch(service string) Logger {
 	l := b.Buffer().Log(service)
 	res := &log{
-		base:    b.base,
-		service: l.Service(),
-		level:   b.level,
-		aux:     b.aux,
-		group:   b.group,
-		tracing: b.tracing,
+		base:          b.base,
+		service:       l.Service(),
+		level:         b.level,
+		aux:           b.aux,
+		group:         b.group,
+		tracing:       b.tracing,
+		ignorePublish: b.ignorePublish,
 	}
 	if !res.tracing {
 		res.level = l.Level()
@@ -534,11 +535,12 @@ func (b *log) Switch(service string) Logger {
 
 func (b *log) Fork() Logger {
 	res := &log{
-		base:    b.base,
-		service: b.service,
-		level:   b.level,
-		tracing: b.tracing,
-		aux:     []interface{}{},
+		base:          b.base,
+		service:       b.service,
+		level:         b.level,
+		tracing:       b.tracing,
+		aux:           []interface{}{},
+		ignorePublish: b.ignorePublish,
 	}
 	grp := b.base.NewGroup()
 	res.group = &grp
