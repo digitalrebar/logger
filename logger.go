@@ -131,8 +131,9 @@ type Line struct {
 	// Message is the message that was logged.
 	Message string
 	// Data is any auxillary data that was captured.
-	Data          []interface{}
-	ignorePublish bool
+	Data []interface{}
+	// Should the line be published or not as an event.
+	IgnorePublish bool
 }
 
 // Publisher is a function to be called whenever a Line would be added
@@ -394,7 +395,7 @@ func (b *Buffer) insertLine(l *Line) {
 		b.nextLine++
 	}
 	b.Unlock()
-	if b.publisher != nil && !l.ignorePublish {
+	if b.publisher != nil && !l.IgnorePublish {
 		b.publisher(l)
 	}
 	if b.baseLogger != nil {
@@ -437,7 +438,7 @@ func (b *log) addLine(level Level, message string, args ...interface{}) {
 		Service:       b.service,
 		Message:       fmt.Sprintf(message, args...),
 		Data:          b.aux,
-		ignorePublish: b.ignorePublish,
+		IgnorePublish: b.ignorePublish,
 	}
 	_, line.File, line.Line, _ = runtime.Caller(2)
 	b.base.insertLine(line)
