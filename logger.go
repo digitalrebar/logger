@@ -196,6 +196,7 @@ type Logger interface {
 	Panicf(string, ...interface{})
 	Auditf(string, ...interface{})
 	IsTrace() bool
+	IsDebug() bool
 	IsInfo() bool
 	IsWarn() bool
 	IsError() bool
