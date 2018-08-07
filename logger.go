@@ -122,6 +122,8 @@ type Line struct {
 	Time time.Time
 	// Service is the name of the log.
 	Service string
+	// Principal is the user or system that caused the log line to be emitted
+	Principal string
 	// Level is the level at which the line was logged.
 	Level Level
 	// File is the source file that generated the line
@@ -141,9 +143,9 @@ type Line struct {
 type Publisher func(l *Line)
 
 func (l *Line) String() string {
-	return fmt.Sprintf("[%d:%d]%s [%5s]: %s:%d\n[%d:%d]%s",
+	return fmt.Sprintf("[%d:%d]%s:%s [%5s]: %s:%d\n[%d:%d]%s",
 		l.Group, l.Seq,
-		l.Service, l.Level,
+		l.Principal, l.Service, l.Level,
 		l.File, l.Line,
 		l.Group, l.Seq,
 		l.Message)
@@ -209,6 +211,8 @@ type Logger interface {
 	SetLevel(Level) Logger
 	Service() string
 	SetService(string) Logger
+	Principal() string
+	SetPrincipal(string) Logger
 	Trace(Level) Logger
 	Buffer() *Buffer
 	AddLine(*Line)
@@ -417,14 +421,14 @@ func (b *Buffer) insertLine(l *Line, noRepublish bool) {
 
 // Log is the default implementation of our Logger interface.
 type log struct {
-	base          *Buffer
-	group         *int64
-	service       string
-	level         Level
-	aux           []interface{}
-	ignorePublish bool
-	noRepublish   bool
-	tracing       bool
+	base               *Buffer
+	group              *int64
+	service, principal string
+	level              Level
+	aux                []interface{}
+	ignorePublish      bool
+	noRepublish        bool
+	tracing            bool
 }
 
 func (b *log) AddLine(line *Line) {
@@ -441,6 +445,7 @@ func (b *log) addLine(level Level, message string, args ...interface{}) {
 	line := &Line{
 		Group:         *b.group,
 		Level:         level,
+		Principal:     b.principal,
 		Service:       b.service,
 		Message:       fmt.Sprintf(message, args...),
 		Data:          b.aux,
@@ -511,19 +516,49 @@ func (b *log) Buffer() *Buffer {
 }
 
 func (b *log) With(args ...interface{}) Logger {
-	res := &log{b.base, b.group, b.service, b.level, b.aux, b.ignorePublish, b.noRepublish, b.tracing}
+	res := &log{
+		aux:           b.aux,
+		group:         b.group,
+		ignorePublish: b.ignorePublish,
+		level:         b.level,
+		principal:     b.principal,
+		service:       b.service,
+		tracing:       b.tracing,
+		noRepublish:   b.noRepublish,
+		base:          b.base,
+	}
 	res.aux = append(res.aux, args...)
 	return res
 }
 
 func (b *log) NoPublish() Logger {
-	res := &log{b.base, b.group, b.service, b.level, b.aux, b.ignorePublish, b.noRepublish, b.tracing}
+	res := &log{
+		aux:           b.aux,
+		base:          b.base,
+		group:         b.group,
+		ignorePublish: b.ignorePublish,
+		level:         b.level,
+		noRepublish:   b.noRepublish,
+		principal:     b.principal,
+		service:       b.service,
+		tracing:       b.tracing,
+	}
 	res.ignorePublish = true
 	return res
 }
 
 func (b *log) NoRepublish() Logger {
-	res := &log{b.base, b.group, b.service, b.level, b.aux, b.ignorePublish, b.noRepublish, b.tracing}
+	res := &log{
+		aux:           b.aux,
+		base:          b.base,
+		group:         b.group,
+		ignorePublish: b.ignorePublish,
+		level:         b.level,
+		noRepublish:   b.noRepublish,
+		principal:     b.principal,
+		service:       b.service,
+		tracing:       b.tracing,
+	}
 	res.noRepublish = true
 	return res
 }
@@ -531,13 +566,14 @@ func (b *log) NoRepublish() Logger {
 func (b *log) Switch(service string) Logger {
 	l := b.Buffer().Log(service)
 	res := &log{
-		base:          b.base,
-		service:       l.Service(),
-		level:         b.level,
 		aux:           b.aux,
+		base:          b.base,
 		group:         b.group,
 		ignorePublish: b.ignorePublish,
+		level:         b.level,
 		noRepublish:   b.noRepublish,
+		principal:     b.principal,
+		service:       l.Service(),
 		tracing:       b.tracing,
 	}
 	if !res.tracing {
@@ -548,12 +584,13 @@ func (b *log) Switch(service string) Logger {
 
 func (b *log) Fork() Logger {
 	res := &log{
-		base:          b.base,
-		service:       b.service,
-		level:         b.level,
 		aux:           []interface{}{},
+		base:          b.base,
 		ignorePublish: b.ignorePublish,
+		level:         b.level,
 		noRepublish:   b.noRepublish,
+		principal:     b.principal,
+		service:       b.service,
 		tracing:       b.tracing,
 	}
 	grp := b.base.NewGroup()
@@ -581,13 +618,23 @@ func (b *log) SetService(s string) Logger {
 	return b
 }
 
+func (b *log) Principal() string {
+	return b.principal
+}
+
+func (b *log) SetPrincipal(p string) Logger {
+	b.principal = p
+	return b
+}
+
 func (b *log) Trace(l Level) Logger {
 	return &log{
-		base:    b.base,
-		service: b.service,
-		level:   l,
-		aux:     b.aux,
-		group:   b.group,
-		tracing: true,
+		aux:       b.aux,
+		base:      b.base,
+		group:     b.group,
+		level:     l,
+		principal: b.principal,
+		service:   b.service,
+		tracing:   true,
 	}
 }
