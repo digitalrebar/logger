@@ -222,8 +222,8 @@ type Logger interface {
 // Loggers.  Buffers are responsible for flushing messages to local
 // loggers and calling Publisher callbacks as needed.
 type Buffer struct {
+	nextGroup int64
 	*sync.Mutex
-	nextGroup    int64
 	baseLogger   Local
 	logs         map[string]*log
 	retainLines  int
