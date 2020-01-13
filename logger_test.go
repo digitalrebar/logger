@@ -6,22 +6,22 @@ func TestGroup(t *testing.T) {
 	buf := New(nil)
 	l := buf.Log("").(*log)
 	l2 := buf.Log("").(*log)
-	if *l.group != *l2.group {
-		t.Errorf("ERROR: %d != %d for group %s", *l.group, *l2.group, l.Service())
+	if l.group != l2.group {
+		t.Errorf("ERROR: %d != %d for group %s", l.group, l2.group, l.Service())
 	} else {
-		t.Logf("%s: both have %d", l.Service(), *l.group)
+		t.Logf("%s: both have %d", l.Service(), l.group)
 	}
 	l3 := buf.Log("other").(*log)
-	if *l.group == *l3.group {
-		t.Logf("%s and %s have the same group %d", l.Service(), l3.Service(), *l.group)
+	if l.group == l3.group {
+		t.Errorf("ERROR: %s and %s have the same group %d", l.Service(), l3.Service(), l.group)
 	} else {
-		t.Errorf("ERROR: %s and %s have different groups %d and %d", l.Service(), l3.Service(), *l.group, *l3.group)
+		t.Logf("%s and %s have different groups %d and %d", l.Service(), l3.Service(), l.group, l3.group)
 	}
 	l4 := l3.Fork().(*log)
-	if *l4.group == *l3.group {
-		t.Errorf("ERROR: %s and %s have the same group %d", l4.Service(), l3.Service(), *l4.group)
+	if l4.group == l3.group {
+		t.Errorf("ERROR: %s and %s have the same group %d", l4.Service(), l3.Service(), l4.group)
 	} else {
-		t.Logf("%s and %s have different groups %d and %d", l4.Service(), l3.Service(), *l4.group, *l3.group)
+		t.Logf("%s and %s have different groups %d and %d", l4.Service(), l3.Service(), l4.group, l3.group)
 	}
 }
 

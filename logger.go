@@ -332,13 +332,12 @@ func (b *Buffer) Log(service string) Logger {
 	res, ok := b.logs[service]
 	if !ok {
 		res = &log{
-			group:   new(int64),
 			base:    b,
 			service: service,
 			level:   b.defaultLevel,
 			aux:     []interface{}{},
 		}
-		atomic.StoreInt64(res.group, b.nextGroup)
+		res.group = atomic.AddInt64(&b.nextGroup, 1)
 		b.logs[service] = res
 	}
 	return res
@@ -422,7 +421,7 @@ func (b *Buffer) insertLine(l *Line, noRepublish bool) {
 // Log is the default implementation of our Logger interface.
 type log struct {
 	base               *Buffer
-	group              *int64
+	group              int64
 	service, principal string
 	level              Level
 	aux                []interface{}
@@ -443,7 +442,7 @@ func (b *log) addLine(level Level, message string, args ...interface{}) {
 		return
 	}
 	line := &Line{
-		Group:         *b.group,
+		Group:         b.group,
 		Level:         level,
 		Principal:     b.principal,
 		Service:       b.service,
@@ -592,9 +591,8 @@ func (b *log) Fork() Logger {
 		principal:     b.principal,
 		service:       b.service,
 		tracing:       b.tracing,
+		group: b.base.NewGroup(),
 	}
-	grp := b.base.NewGroup()
-	res.group = &grp
 	return res
 }
 
