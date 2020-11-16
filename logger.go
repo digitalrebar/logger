@@ -249,7 +249,10 @@ func (b *Buffer) SetDefaultLevel(l Level) *Buffer {
 
 // NewGroup returns a new group number.
 func (b *Buffer) NewGroup() int64 {
-	return atomic.AddInt64(&b.nextGroup, 1)
+	b.Lock()
+	defer b.Unlock()
+	b.nextGroup++
+	return b.nextGroup
 }
 
 // SetPublisher sets a callback function to be called whenever
@@ -332,12 +335,14 @@ func (b *Buffer) Log(service string) Logger {
 	res, ok := b.logs[service]
 	if !ok {
 		res = &log{
+			Mutex:   &sync.Mutex{},
 			base:    b,
 			service: service,
 			level:   b.defaultLevel,
 			aux:     []interface{}{},
 		}
-		res.group = atomic.AddInt64(&b.nextGroup, 1)
+		b.nextGroup++
+		res.group = b.nextGroup
 		b.logs[service] = res
 	}
 	return res
@@ -420,6 +425,7 @@ func (b *Buffer) insertLine(l *Line, noRepublish bool) {
 
 // Log is the default implementation of our Logger interface.
 type log struct {
+	*sync.Mutex
 	base               *Buffer
 	group              int64
 	service, principal string
@@ -431,6 +437,8 @@ type log struct {
 }
 
 func (b *log) AddLine(line *Line) {
+	b.Lock()
+	defer b.Unlock()
 	if line.Level < b.level {
 		return
 	}
@@ -438,6 +446,8 @@ func (b *log) AddLine(line *Line) {
 }
 
 func (b *log) addLine(level Level, message string, args ...interface{}) {
+	b.Lock()
+	defer b.Unlock()
 	if level < b.level {
 		return
 	}
@@ -491,22 +501,32 @@ func (b *log) Auditf(msg string, args ...interface{}) {
 }
 
 func (b *log) IsTrace() bool {
+	b.Lock()
+	defer b.Unlock()
 	return b.level <= Trace
 }
 
 func (b *log) IsDebug() bool {
+	b.Lock()
+	defer b.Unlock()
 	return b.level <= Debug
 }
 
 func (b *log) IsInfo() bool {
+	b.Lock()
+	defer b.Unlock()
 	return b.level <= Info
 }
 
 func (b *log) IsWarn() bool {
+	b.Lock()
+	defer b.Unlock()
 	return b.level <= Warn
 }
 
 func (b *log) IsError() bool {
+	b.Lock()
+	defer b.Unlock()
 	return b.level <= Error
 }
 
@@ -515,7 +535,10 @@ func (b *log) Buffer() *Buffer {
 }
 
 func (b *log) With(args ...interface{}) Logger {
+	b.Lock()
+	defer b.Unlock()
 	res := &log{
+		Mutex:         &sync.Mutex{},
 		aux:           b.aux,
 		group:         b.group,
 		ignorePublish: b.ignorePublish,
@@ -531,7 +554,10 @@ func (b *log) With(args ...interface{}) Logger {
 }
 
 func (b *log) NoPublish() Logger {
+	b.Lock()
+	defer b.Unlock()
 	res := &log{
+		Mutex:         &sync.Mutex{},
 		aux:           b.aux,
 		base:          b.base,
 		group:         b.group,
@@ -547,7 +573,10 @@ func (b *log) NoPublish() Logger {
 }
 
 func (b *log) NoRepublish() Logger {
+	b.Lock()
+	defer b.Unlock()
 	res := &log{
+		Mutex:         &sync.Mutex{},
 		aux:           b.aux,
 		base:          b.base,
 		group:         b.group,
@@ -564,7 +593,10 @@ func (b *log) NoRepublish() Logger {
 
 func (b *log) Switch(service string) Logger {
 	l := b.Buffer().Log(service)
+	b.Lock()
+	defer b.Unlock()
 	res := &log{
+		Mutex:         &sync.Mutex{},
 		aux:           b.aux,
 		base:          b.base,
 		group:         b.group,
@@ -572,17 +604,28 @@ func (b *log) Switch(service string) Logger {
 		level:         b.level,
 		noRepublish:   b.noRepublish,
 		principal:     b.principal,
-		service:       l.Service(),
 		tracing:       b.tracing,
 	}
+	if b == l {
+		res.service = b.service
+	} else {
+		res.service = l.Service()
+	}
 	if !res.tracing {
-		res.level = l.Level()
+		if b == l {
+			res.level = b.level
+		} else {
+			res.level = l.Level()
+		}
 	}
 	return res
 }
 
 func (b *log) Fork() Logger {
+	b.Lock()
+	defer b.Unlock()
 	res := &log{
+		Mutex:         &sync.Mutex{},
 		aux:           []interface{}{},
 		base:          b.base,
 		ignorePublish: b.ignorePublish,
@@ -591,16 +634,20 @@ func (b *log) Fork() Logger {
 		principal:     b.principal,
 		service:       b.service,
 		tracing:       b.tracing,
-		group: b.base.NewGroup(),
+		group:         b.base.NewGroup(),
 	}
 	return res
 }
 
 func (b *log) Level() Level {
+	b.Lock()
+	defer b.Unlock()
 	return b.level
 }
 
 func (b *log) SetLevel(l Level) Logger {
+	b.Lock()
+	defer b.Unlock()
 	if !b.tracing {
 		b.level = l
 	}
@@ -608,25 +655,36 @@ func (b *log) SetLevel(l Level) Logger {
 }
 
 func (b *log) Service() string {
+	b.Lock()
+	defer b.Unlock()
 	return b.service
 }
 
 func (b *log) SetService(s string) Logger {
+	b.Lock()
+	defer b.Unlock()
 	b.service = s
 	return b
 }
 
 func (b *log) Principal() string {
+	b.Lock()
+	defer b.Unlock()
 	return b.principal
 }
 
 func (b *log) SetPrincipal(p string) Logger {
+	b.Lock()
+	defer b.Unlock()
 	b.principal = p
 	return b
 }
 
 func (b *log) Trace(l Level) Logger {
+	b.Lock()
+	defer b.Unlock()
 	return &log{
+		Mutex:     &sync.Mutex{},
 		aux:       b.aux,
 		base:      b.base,
 		group:     b.group,
