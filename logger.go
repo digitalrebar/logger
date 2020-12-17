@@ -10,12 +10,18 @@
 package logger
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"log"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/hashicorp/go-hclog"
 )
 
 // Level is a log level.  It consists of the usual logging levels.
@@ -32,9 +38,9 @@ const (
 	// signal an unusual condition.
 	Info Level = iota
 	// Warn should be used to signal when something unusual happened
-	// that the program was able to handle appropriatly.
+	// that the program was able to handle appropriately.
 	Warn Level = iota
-	// Error should be used to signal when something unusal happened that
+	// Error should be used to signal when something unusual happened that
 	// could not be handled gracefully, but that did not result in a
 	// condition where we had to shut down.
 	Error Level = iota
@@ -44,7 +50,7 @@ const (
 	Fatal Level = iota
 	// Panic should be used where we need to abort whatever is happening,
 	// and there is a possibility of handling or avoiding the error in a
-	// programmatic fashion.
+	// programmatic fashion.  Panic inherently includes a stack dump.
 	Panic Level = iota
 	// Audit logs must always be printed.
 	Audit Level = iota
@@ -136,6 +142,8 @@ type Line struct {
 	Data []interface{}
 	// Should the line be published or not as an event.
 	IgnorePublish bool
+	// extra functions to skip
+	extraOffset int
 }
 
 // Publisher is a function to be called whenever a Line would be added
@@ -161,9 +169,9 @@ type Local interface {
 
 // Logger is the interface that users of this package should expect.
 //
-// Tracef, Debugf, Infof, Warnf, Errorf, Fatalf, and Panicf are the
+// Logf, Tracef, Debugf, Infof, Warnf, Errorf, Fatalf, and Panicf are the
 // usual logging functions.  They will add Lines to the Buffer based
-// on the current Level of the Log.
+// on the current Level of the Log.  They function analogously to Printf.
 //
 // Level and SetLevel get the current logging Level of the Logger
 //
@@ -225,7 +233,7 @@ type Buffer struct {
 	nextGroup int64
 	*sync.Mutex
 	baseLogger   Local
-	logs         map[string]*log
+	logs         map[string]*defaultLog
 	retainLines  int
 	wrapped      bool
 	nextLine     int
@@ -315,7 +323,7 @@ func New(base Local) *Buffer {
 	return &Buffer{
 		Mutex:        &sync.Mutex{},
 		baseLogger:   base,
-		logs:         map[string]*log{},
+		logs:         map[string]*defaultLog{},
 		retainLines:  1000,
 		buffer:       make([]*Line, 1000),
 		defaultLevel: Error,
@@ -334,7 +342,7 @@ func (b *Buffer) Log(service string) Logger {
 	}
 	res, ok := b.logs[service]
 	if !ok {
-		res = &log{
+		res = &defaultLog{
 			Mutex:   &sync.Mutex{},
 			base:    b,
 			service: service,
@@ -424,7 +432,7 @@ func (b *Buffer) insertLine(l *Line, noRepublish bool) {
 }
 
 // Log is the default implementation of our Logger interface.
-type log struct {
+type defaultLog struct {
 	*sync.Mutex
 	base               *Buffer
 	group              int64
@@ -436,7 +444,7 @@ type log struct {
 	tracing            bool
 }
 
-func (b *log) AddLine(line *Line) {
+func (b *defaultLog) AddLine(line *Line) {
 	b.Lock()
 	defer b.Unlock()
 	if line.Level < b.level {
@@ -445,7 +453,7 @@ func (b *log) AddLine(line *Line) {
 	b.base.insertLine(line, b.noRepublish)
 }
 
-func (b *log) addLine(level Level, message string, args ...interface{}) {
+func (b *defaultLog) addLine(level Level, skip int, message string, args ...interface{}) {
 	b.Lock()
 	defer b.Unlock()
 	if level < b.level {
@@ -460,84 +468,84 @@ func (b *log) addLine(level Level, message string, args ...interface{}) {
 		Data:          b.aux,
 		IgnorePublish: b.ignorePublish,
 	}
-	_, line.File, line.Line, _ = runtime.Caller(2)
+	_, line.File, line.Line, _ = runtime.Caller(skip)
 	b.base.insertLine(line, b.noRepublish)
 }
 
-func (b *log) Logf(l Level, msg string, args ...interface{}) {
-	b.addLine(l, msg, args...)
+func (b *defaultLog) Logf(l Level, msg string, args ...interface{}) {
+	b.addLine(l, 2, msg, args...)
 }
 
-func (b *log) Tracef(msg string, args ...interface{}) {
-	b.addLine(Trace, msg, args...)
+func (b *defaultLog) Tracef(msg string, args ...interface{}) {
+	b.addLine(Trace, 2, msg, args...)
 }
 
-func (b *log) Debugf(msg string, args ...interface{}) {
-	b.addLine(Debug, msg, args...)
+func (b *defaultLog) Debugf(msg string, args ...interface{}) {
+	b.addLine(Debug, 2, msg, args...)
 }
 
-func (b *log) Infof(msg string, args ...interface{}) {
-	b.addLine(Info, msg, args...)
+func (b *defaultLog) Infof(msg string, args ...interface{}) {
+	b.addLine(Info, 2, msg, args...)
 }
 
-func (b *log) Warnf(msg string, args ...interface{}) {
-	b.addLine(Warn, msg, args...)
+func (b *defaultLog) Warnf(msg string, args ...interface{}) {
+	b.addLine(Warn, 2, msg, args...)
 }
 
-func (b *log) Errorf(msg string, args ...interface{}) {
-	b.addLine(Error, msg, args...)
+func (b *defaultLog) Errorf(msg string, args ...interface{}) {
+	b.addLine(Error, 2, msg, args...)
 }
 
-func (b *log) Fatalf(msg string, args ...interface{}) {
-	b.addLine(Fatal, msg, args...)
+func (b *defaultLog) Fatalf(msg string, args ...interface{}) {
+	b.addLine(Fatal, 2, msg, args...)
 }
 
-func (b *log) Panicf(msg string, args ...interface{}) {
-	b.addLine(Panic, msg, args...)
+func (b *defaultLog) Panicf(msg string, args ...interface{}) {
+	b.addLine(Panic, 2, msg, args...)
 }
 
-func (b *log) Auditf(msg string, args ...interface{}) {
-	b.addLine(Audit, msg, args...)
+func (b *defaultLog) Auditf(msg string, args ...interface{}) {
+	b.addLine(Audit, 2, msg, args...)
 }
 
-func (b *log) IsTrace() bool {
+func (b *defaultLog) IsTrace() bool {
 	b.Lock()
 	defer b.Unlock()
 	return b.level <= Trace
 }
 
-func (b *log) IsDebug() bool {
+func (b *defaultLog) IsDebug() bool {
 	b.Lock()
 	defer b.Unlock()
 	return b.level <= Debug
 }
 
-func (b *log) IsInfo() bool {
+func (b *defaultLog) IsInfo() bool {
 	b.Lock()
 	defer b.Unlock()
 	return b.level <= Info
 }
 
-func (b *log) IsWarn() bool {
+func (b *defaultLog) IsWarn() bool {
 	b.Lock()
 	defer b.Unlock()
 	return b.level <= Warn
 }
 
-func (b *log) IsError() bool {
+func (b *defaultLog) IsError() bool {
 	b.Lock()
 	defer b.Unlock()
 	return b.level <= Error
 }
 
-func (b *log) Buffer() *Buffer {
+func (b *defaultLog) Buffer() *Buffer {
 	return b.base
 }
 
-func (b *log) With(args ...interface{}) Logger {
+func (b *defaultLog) With(args ...interface{}) Logger {
 	b.Lock()
 	defer b.Unlock()
-	res := &log{
+	res := &defaultLog{
 		Mutex:         &sync.Mutex{},
 		aux:           b.aux,
 		group:         b.group,
@@ -553,10 +561,10 @@ func (b *log) With(args ...interface{}) Logger {
 	return res
 }
 
-func (b *log) NoPublish() Logger {
+func (b *defaultLog) NoPublish() Logger {
 	b.Lock()
 	defer b.Unlock()
-	res := &log{
+	res := &defaultLog{
 		Mutex:         &sync.Mutex{},
 		aux:           b.aux,
 		base:          b.base,
@@ -572,10 +580,10 @@ func (b *log) NoPublish() Logger {
 	return res
 }
 
-func (b *log) NoRepublish() Logger {
+func (b *defaultLog) NoRepublish() Logger {
 	b.Lock()
 	defer b.Unlock()
-	res := &log{
+	res := &defaultLog{
 		Mutex:         &sync.Mutex{},
 		aux:           b.aux,
 		base:          b.base,
@@ -591,11 +599,11 @@ func (b *log) NoRepublish() Logger {
 	return res
 }
 
-func (b *log) Switch(service string) Logger {
+func (b *defaultLog) Switch(service string) Logger {
 	l := b.Buffer().Log(service)
 	b.Lock()
 	defer b.Unlock()
-	res := &log{
+	res := &defaultLog{
 		Mutex:         &sync.Mutex{},
 		aux:           b.aux,
 		base:          b.base,
@@ -621,10 +629,10 @@ func (b *log) Switch(service string) Logger {
 	return res
 }
 
-func (b *log) Fork() Logger {
+func (b *defaultLog) Fork() Logger {
 	b.Lock()
 	defer b.Unlock()
-	res := &log{
+	res := &defaultLog{
 		Mutex:         &sync.Mutex{},
 		aux:           []interface{}{},
 		base:          b.base,
@@ -639,13 +647,13 @@ func (b *log) Fork() Logger {
 	return res
 }
 
-func (b *log) Level() Level {
+func (b *defaultLog) Level() Level {
 	b.Lock()
 	defer b.Unlock()
 	return b.level
 }
 
-func (b *log) SetLevel(l Level) Logger {
+func (b *defaultLog) SetLevel(l Level) Logger {
 	b.Lock()
 	defer b.Unlock()
 	if !b.tracing {
@@ -654,36 +662,36 @@ func (b *log) SetLevel(l Level) Logger {
 	return b
 }
 
-func (b *log) Service() string {
+func (b *defaultLog) Service() string {
 	b.Lock()
 	defer b.Unlock()
 	return b.service
 }
 
-func (b *log) SetService(s string) Logger {
+func (b *defaultLog) SetService(s string) Logger {
 	b.Lock()
 	defer b.Unlock()
 	b.service = s
 	return b
 }
 
-func (b *log) Principal() string {
+func (b *defaultLog) Principal() string {
 	b.Lock()
 	defer b.Unlock()
 	return b.principal
 }
 
-func (b *log) SetPrincipal(p string) Logger {
+func (b *defaultLog) SetPrincipal(p string) Logger {
 	b.Lock()
 	defer b.Unlock()
 	b.principal = p
 	return b
 }
 
-func (b *log) Trace(l Level) Logger {
+func (b *defaultLog) Trace(l Level) Logger {
 	b.Lock()
 	defer b.Unlock()
-	return &log{
+	return &defaultLog{
 		Mutex:     &sync.Mutex{},
 		aux:       b.aux,
 		base:      b.base,
@@ -693,4 +701,127 @@ func (b *log) Trace(l Level) Logger {
 		service:   b.service,
 		tracing:   true,
 	}
+}
+
+var lvlRE = regexp.MustCompile(`^\[([^/]]+)\]`)
+
+type hcLog struct {
+	*defaultLog
+	defaultLvl Level
+}
+
+func (a *hcLog) parse(s string) (Level, string) {
+	matches := lvlRE.FindStringSubmatch(s)
+	if matches == nil || len(matches) != 2 {
+		return a.defaultLvl, s
+	}
+	matchLvl, err := ParseLevel(matches[1])
+	if err != nil {
+		return a.defaultLvl, s
+	}
+	return matchLvl, strings.TrimPrefix(s, matches[0])
+}
+
+func (a *hcLog) Write(buf []byte) (int, error) {
+	str := string(bytes.TrimRight(buf, " \t\n"))
+	lvl, msg := a.parse(str)
+	a.log(lvl, msg)
+	return len(buf), nil
+}
+
+func o2hc(level hclog.Level) Level {
+	switch level {
+	case hclog.NoLevel:
+		return Audit
+	case hclog.Trace:
+		return Trace
+	case hclog.Debug:
+		return Debug
+	case hclog.Info:
+		return Info
+	case hclog.Warn:
+		return Warn
+	case hclog.Error:
+		return Error
+	default:
+		return Level(level)
+	}
+}
+
+func (l *hcLog) log(lv Level, s string, val ...interface{}) {
+	msg := strings.Builder{}
+	msg.WriteString(s)
+	val = append(l.ImpliedArgs(), val...)
+	if len(val) > 0 {
+		msg.WriteString(":")
+		if len(val)%2 == 0 {
+			for i := 0; i < len(val); i += 2 {
+				msg.WriteString(fmt.Sprintf(` %v=%v`, val[i], val[i+1]))
+			}
+		} else {
+			msg.WriteString(fmt.Sprintf(" %v", val))
+		}
+	}
+	l.addLine(lv, 3, msg.String())
+}
+
+func (l *hcLog) Log(lv hclog.Level, s string, val ...interface{}) {
+	l.log(o2hc(lv), s, val...)
+}
+
+func (l *hcLog) Trace(s string, val ...interface{}) {
+	l.log(Trace, s, val...)
+}
+
+func (l *hcLog) Debug(s string, val ...interface{}) {
+	l.log(Debug, s, val...)
+}
+
+func (l *hcLog) Info(s string, val ...interface{}) {
+	l.log(Info, s, val...)
+}
+
+func (l *hcLog) Warn(s string, val ...interface{}) {
+	l.log(Warn, s, val...)
+}
+
+func (l *hcLog) Error(s string, val ...interface{}) {
+	l.log(Error, s, val...)
+}
+
+func (l *hcLog) ImpliedArgs() []interface{} {
+	l.Lock()
+	defer l.Unlock()
+	return append([]interface{}{}, l.aux...)
+}
+
+func (l *hcLog) With(args ...interface{}) hclog.Logger {
+	return &hcLog{l.defaultLog.With(args...).(*defaultLog), l.defaultLvl}
+}
+
+func (l *hcLog) Name() string {
+	return l.Service()
+}
+
+func (l *hcLog) Named(s string) hclog.Logger {
+	return &hcLog{l.SetPrincipal(s).(*defaultLog), l.defaultLvl}
+}
+
+func (l *hcLog) ResetNamed(s string) hclog.Logger {
+	return &hcLog{l.SetPrincipal(s).(*defaultLog), l.defaultLvl}
+}
+
+func (l *hcLog) SetLevel(level hclog.Level) {
+	l.defaultLog = l.defaultLog.SetLevel(o2hc(level)).(*defaultLog)
+}
+func (l *hcLog) StandardLogger(_ *hclog.StandardLoggerOptions) *log.Logger {
+	return log.New(l, "", 0)
+}
+
+func (l *hcLog) StandardWriter(_ *hclog.StandardLoggerOptions) io.Writer {
+	return l
+}
+
+func HCL(l Logger, defaultLvl Level) *hcLog {
+	return &hcLog{l.(*defaultLog), defaultLvl}
 }

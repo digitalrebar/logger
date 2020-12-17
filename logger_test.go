@@ -4,20 +4,20 @@ import "testing"
 
 func TestGroup(t *testing.T) {
 	buf := New(nil)
-	l := buf.Log("").(*log)
-	l2 := buf.Log("").(*log)
+	l := buf.Log("").(*defaultLog)
+	l2 := buf.Log("").(*defaultLog)
 	if l.group != l2.group {
 		t.Errorf("ERROR: %d != %d for group %s", l.group, l2.group, l.Service())
 	} else {
 		t.Logf("%s: both have %d", l.Service(), l.group)
 	}
-	l3 := buf.Log("other").(*log)
+	l3 := buf.Log("other").(*defaultLog)
 	if l.group == l3.group {
 		t.Errorf("ERROR: %s and %s have the same group %d", l.Service(), l3.Service(), l.group)
 	} else {
 		t.Logf("%s and %s have different groups %d and %d", l.Service(), l3.Service(), l.group, l3.group)
 	}
-	l4 := l3.Fork().(*log)
+	l4 := l3.Fork().(*defaultLog)
 	if l4.group == l3.group {
 		t.Errorf("ERROR: %s and %s have the same group %d", l4.Service(), l3.Service(), l4.group)
 	} else {
@@ -124,7 +124,7 @@ func TestLevels(t *testing.T) {
 	}
 	for lvl, count := range lpl {
 		buf := New(nil)
-		l := buf.Log("").(*log)
+		l := buf.Log("").(*defaultLog)
 		l.SetLevel(lvl)
 		logLevels(l)
 		lines := buf.Lines(-1)
