@@ -240,6 +240,7 @@ type Buffer struct {
 	buffer       []*Line
 	publisher    Publisher
 	defaultLevel Level
+	fileTrimmer  func(string) string
 }
 
 func (b *Buffer) DefaultLevel() Level {
@@ -327,7 +328,15 @@ func New(base Local) *Buffer {
 		retainLines:  1000,
 		buffer:       make([]*Line, 1000),
 		defaultLevel: Error,
+		fileTrimmer:  func(s string) string { return s },
 	}
+}
+
+// Setting a FileTrimmer will cause all future Lines logged through
+// this Buffer to have their line.File field mangled according
+// the logic passed in through f.
+func (b *Buffer) FileTrimmer(f func(string) string) {
+	b.fileTrimmer = f
 }
 
 // Log creates or reuses a Log for the passed-in Service.  All logs
@@ -469,6 +478,7 @@ func (b *defaultLog) addLine(level Level, skip int, message string, args ...inte
 		IgnorePublish: b.ignorePublish,
 	}
 	_, line.File, line.Line, _ = runtime.Caller(skip)
+	line.File = b.base.fileTrimmer(line.File)
 	b.base.insertLine(line, b.noRepublish)
 }
 

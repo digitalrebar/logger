@@ -1,6 +1,9 @@
 package logger
 
-import "testing"
+import (
+	"path"
+	"testing"
+)
 
 func TestGroup(t *testing.T) {
 	buf := New(nil)
@@ -32,10 +35,18 @@ func expectLines(t *testing.T, count int, lines []*Line) {
 	} else {
 		t.Logf("Got expected number of lines: %d", count)
 	}
+	for i := range lines {
+		if lines[i].File != "logger_test.go" {
+			t.Errorf("Line trimmer did not trimm!  Wanted logger_test.go, got %s", lines[i].File)
+		}
+	}
 }
 
 func TestSeq(t *testing.T) {
 	buf := New(nil)
+	buf.FileTrimmer(func(s string) string {
+		return path.Base(s)
+	})
 	l := buf.Log("")
 	l2 := buf.Log("")
 	l.Errorf("0")
@@ -56,6 +67,9 @@ func TestSeq(t *testing.T) {
 
 func TestBuffer(t *testing.T) {
 	buf := New(nil)
+	buf.FileTrimmer(func(s string) string {
+		return path.Base(s)
+	})
 	l := buf.Log("")
 	if buf.MaxLines() != 1000 {
 		t.Errorf("ERROR: Expected MaxLines default to be 1000, not %d", buf.MaxLines())
@@ -124,6 +138,9 @@ func TestLevels(t *testing.T) {
 	}
 	for lvl, count := range lpl {
 		buf := New(nil)
+		buf.FileTrimmer(func(s string) string {
+			return path.Base(s)
+		})
 		l := buf.Log("").(*defaultLog)
 		l.SetLevel(lvl)
 		logLevels(l)
